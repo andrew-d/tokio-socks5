@@ -104,9 +104,9 @@ fn main() {
         handle.spawn(client.then(move |res| {
             match res {
                 Ok((a, b)) => {
-                    println!("proxied {}/{} bytes for {}", a, b, addr)
+                    debug!("proxied {}/{} bytes for {}", a, b, addr)
                 }
-                Err(e) => println!("error for {}: {}", addr, e),
+                Err(e) => error!("error for {}: {}", addr, e),
             }
             future::ok(())
         }));

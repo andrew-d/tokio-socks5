@@ -201,7 +201,7 @@ impl Client {
             } else {
                 Err(other("no supported method given"))
             }
-        }).boxed();
+        });
 
         // After we've concluded that one of the client's supported methods is
         // `METH_NO_AUTH`, we "ack" this to the client by sending back that
@@ -209,7 +209,7 @@ impl Client {
         // works very similarly to the `read_exact` combinator.
         let part1 = authenticated.and_then(|conn| {
             write_all(conn, [v5::VERSION, v5::METH_NO_AUTH])
-        }).boxed();
+        });
 
         // Next up, we get a selected protocol version back from the client, as
         // well as a command indicating what they'd like to do. We just verify
@@ -226,7 +226,7 @@ impl Client {
                     Err(other("didn't confirm with v5 version"))
                 }
             })
-        }).boxed();
+        });
         let command = ack.and_then(|conn| {
             read_exact(conn, [0u8]).and_then(|(conn, buf)| {
                 if buf[0] == v5::CMD_CONNECT {
@@ -235,7 +235,7 @@ impl Client {
                     Err(other("unsupported command"))
                 }
             })
-        }).boxed();
+        });
 
         // After we've negotiated a command, there's one byte which is reserved
         // for future use, so we read it and discard it. The next part of the
@@ -248,7 +248,7 @@ impl Client {
         let mut dns = self.dns.clone();
         let resv = command.and_then(|c| read_exact(c, [0u8]).map(|c| c.0));
         let atyp = resv.and_then(|c| read_exact(c, [0u8]));
-        let addr = mybox(atyp.and_then(move |(c, buf)| {
+        let addr = atyp.and_then(move |(c, buf)| {
             match buf[0] {
                 // For IPv4 addresses, we read the 4 bytes for the address as
                 // well as 2 bytes for the port.
@@ -329,7 +329,7 @@ impl Client {
                     mybox(future::err(other(&msg)))
                 }
             }
-        }));
+        });
 
         // Now that we've got a socket address to connect to, let's actually
         // create a connection to that socket!
@@ -344,17 +344,17 @@ impl Client {
         // to the next stage of the SOCKSv5 handshake, but we keep ahold of any
         // possible error in the connection phase to handle it in a moment.
         let handle = self.handle.clone();
-        let connected = mybox(addr.and_then(move |(c, addr)| {
+        let connected = addr.and_then(move |(c, addr)| {
             debug!("proxying to {}", addr);
             TcpStream::connect(&addr, &handle).then(move |c2| Ok((c, c2, addr)))
-        }));
+        });
 
         // Once we've gotten to this point, we're ready for the final part of
         // the SOCKSv5 handshake. We've got in our hands (c2) the client we're
         // going to proxy data to, so we write out relevant information to the
         // original client (c1) the "response packet" which is the final part of
         // this handshake.
-        let handshake_finish = mybox(connected.and_then(|(c1, c2, addr)| {
+        let handshake_finish = connected.and_then(|(c1, c2, addr)| {
             let mut resp = [0u8; 32];
 
             // VER - protocol version
@@ -419,7 +419,7 @@ impl Client {
             write_all(c1, w).and_then(|(c1, _)| {
                 c2.map(|c2| (c1, c2))
             })
-        }));
+        });
 
         // Phew! If you've gotten this far, then we're now entirely done with
         // the entire SOCKSv5 handshake!
@@ -433,7 +433,7 @@ impl Client {
         // We then apply this timeout to the entire handshake all at once by
         // performing a `select` between the timeout and the handshake itself.
         let timeout = Timeout::new(Duration::new(10, 0), &self.handle).unwrap();
-        let pair = mybox(handshake_finish.map(Ok).select(timeout.map(Err)).then(|res| {
+        let pair = handshake_finish.map(Ok).select(timeout.map(Err)).then(|res| {
             match res {
                 // The handshake finished before the timeout fired, so we
                 // drop the future representing the timeout, canceling the
@@ -460,7 +460,7 @@ impl Client {
                 // keep propagating along the error.
                 Err((e, _other)) => Err(e),
             }
-        }));
+        });
 
         // At this point we've *actually* finished the handshake. Not only have
         // we read/written all the relevant bytes, but we've also managed to
